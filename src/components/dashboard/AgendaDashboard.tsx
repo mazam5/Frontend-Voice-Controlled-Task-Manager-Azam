@@ -14,7 +14,7 @@ export const AgendaDashboard = ({ tasks, mobileTab }: AgendaDashboardProps) => {
     const evening: Task[] = [];
 
     tasks.forEach((t) => {
-      const hour = new Date(t.scheduled_at).getHours();
+      const hour = new Date(t.scheduled_at).getUTCHours();
       if (hour >= 6 && hour < 12) morning.push(t);
       else if (hour >= 12 && hour < 17) afternoon.push(t);
       else evening.push(t);

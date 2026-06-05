@@ -10,16 +10,27 @@ export const TaskItem = ({ task }: TaskItemProps) => {
     new Date(dateStr).toLocaleTimeString("en-US", {
       hour: "numeric",
       minute: "2-digit",
+      timeZone: "UTC",
     });
 
   const formatTaskDay = (dateStr: string) => {
     const d = new Date(dateStr);
+    const datePart = d.toISOString().split("T")[0];
+    
     const now = new Date();
-    if (d.toDateString() === now.toDateString()) return "Today";
-    const tomorrow = new Date(now);
-    tomorrow.setDate(now.getDate() + 1);
-    if (d.toDateString() === tomorrow.toDateString()) return "Tomorrow";
-    return d.toLocaleDateString("en-US", { month: "short", day: "numeric" });
+    const nowPart = now.toISOString().split("T")[0];
+    
+    if (datePart === nowPart) return "Today";
+    
+    const tomorrow = new Date(Date.now() + 86400000);
+    const tomorrowPart = tomorrow.toISOString().split("T")[0];
+    if (datePart === tomorrowPart) return "Tomorrow";
+    
+    return d.toLocaleDateString("en-US", {
+      month: "short",
+      day: "numeric",
+      timeZone: "UTC",
+    });
   };
 
   return (
