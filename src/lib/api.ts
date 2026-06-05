@@ -1,11 +1,29 @@
 import bcrypt from "bcryptjs";
 
 export const BACKEND_URL = import.meta.env.VITE_API_URL || "http://localhost:5000";
+export const BACKEND_WS_URL = import.meta.env.VITE_WS_URL || "ws://localhost:5000";
 
 export interface User {
   id: number;
   name: string;
   email: string;
+}
+
+export interface Task {
+  id: number;
+  user_id: number;
+  title: string;
+  description?: string;
+  scheduled_at: string;
+  completed: boolean;
+  created_at?: string;
+  updated_at?: string;
+}
+
+export interface VoiceChatResponse {
+  textResponse: string;
+  tasks: Task[];
+  log?: string;
 }
 
 // Get auth token from local storage
@@ -38,6 +56,37 @@ export const setUserInfo = (user: User) => {
 export const logoutUser = () => {
   localStorage.removeItem("auralist_token");
   localStorage.removeItem("auralist_user");
+};
+
+// Fetch wrapper with auth header
+const authFetch = async (endpoint: string, options: RequestInit = {}) => {
+  const token = getToken();
+  const headers = new Headers(options.headers || {});
+
+  if (token) {
+    headers.set("Authorization", `Bearer ${token}`);
+  }
+
+  headers.set("Content-Type", "application/json");
+
+  const response = await fetch(`${BACKEND_URL}${endpoint}`, {
+    ...options,
+    headers
+  });
+
+  if (response.status === 401) {
+    // Session expired or unauthorized, logout
+    logoutUser();
+    window.location.reload();
+    throw new Error("Unauthorized");
+  }
+
+  if (!response.ok) {
+    const errorData = await response.json().catch(() => ({}));
+    throw new Error(errorData.message || `Request failed with status ${response.status}`);
+  }
+
+  return response.json();
 };
 
 export const api = {
@@ -88,4 +137,9 @@ export const api = {
     return response.json();
   },
 
+
+  getTasks: (): Promise<Task[]> => authFetch("/api/tasks"),
+
+  resetSession: () =>
+    authFetch("/api/voice/reset", { method: "POST" }),
 };
