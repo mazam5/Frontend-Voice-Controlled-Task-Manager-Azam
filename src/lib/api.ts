@@ -1,7 +1,24 @@
 import bcrypt from "bcryptjs";
 
 export const BACKEND_URL = import.meta.env.VITE_API_URL || "http://localhost:5000";
-export const BACKEND_WS_URL = import.meta.env.VITE_WS_URL || "ws://localhost:5000";
+
+const getWsUrl = () => {
+  const envUrl = import.meta.env.VITE_WS_URL;
+  const isHttps = typeof window !== "undefined" && window.location.protocol === "https:";
+
+  if (envUrl) {
+    if (isHttps && envUrl.startsWith("ws://")) {
+      return envUrl.replace("ws://", "wss://");
+    }
+    return envUrl;
+  }
+
+  // Auto-generate based on BACKEND_URL
+  const base = BACKEND_URL.replace(/^http/, "ws");
+  return base.endsWith("/ws") ? base : `${base}/ws`;
+};
+
+export const BACKEND_WS_URL = getWsUrl();
 
 export interface User {
   id: number;
