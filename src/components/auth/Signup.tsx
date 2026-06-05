@@ -81,6 +81,7 @@ const ValidationItem = ({ checked, text, isVisible, onHidden }: ValidationItemPr
 const SignUp = ({ onRegisterSuccess }: SignUpProps) => {
   const [isLoading, setIsLoading] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
+  const [isHoverCardOpen, setIsHoverCardOpen] = useState(false);
 
   const form = useForm<z.infer<typeof signupFormSchema>>({
     resolver: zodResolver(signupFormSchema),
@@ -123,6 +124,12 @@ const SignUp = ({ onRegisterSuccess }: SignUpProps) => {
   }, [checks.length, checks.uppercase, checks.lowercase, checks.number, checks.special]);
 
   const allHidden = Object.values(visibleItems).every(v => v === false);
+
+  useEffect(() => {
+    if (allHidden) {
+      setIsHoverCardOpen(false);
+    }
+  }, [allHidden]);
 
   async function onSubmit(data: z.infer<typeof signupFormSchema>) {
     setIsLoading(true);
@@ -184,7 +191,12 @@ const SignUp = ({ onRegisterSuccess }: SignUpProps) => {
                     <FieldLabel htmlFor="password">Password</FieldLabel>
                     <span className="text-slate-500 text-[10px] italic select-none">(Hover for requirements)</span>
                   </div>
-                  <HoverCard open={allHidden ? false : undefined} openDelay={100} closeDelay={100}>
+                  <HoverCard
+                    open={isHoverCardOpen}
+                    onOpenChange={(open) => setIsHoverCardOpen(allHidden ? false : open)}
+                    openDelay={100}
+                    closeDelay={100}
+                  >
                     <HoverCardTrigger asChild>
                       <div className="relative w-full">
                         <Input
