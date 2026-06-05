@@ -147,6 +147,7 @@ export const useVoiceAgent = (onTasksUpdated?: (tasks: Task[]) => void) => {
     startListening: startRec,
     stopListening: stopRec,
   } = useSpeechRecognition({
+    isAgentSpeaking: agentState === "speaking",
     onStart: () => {
       setAgentState("listening");
     },

@@ -8,6 +8,7 @@ interface UseSpeechRecognitionProps {
   onError?: (error: string) => void;
   onEnd?: () => void;
   addLog?: (msg: string) => void;
+  isAgentSpeaking?: boolean;
 }
 
 export const useSpeechRecognition = ({
@@ -17,11 +18,18 @@ export const useSpeechRecognition = ({
   onError,
   onEnd,
   addLog,
+  isAgentSpeaking = false,
 }: UseSpeechRecognitionProps = {}) => {
   const [isMicActive, setIsMicActive] = useState(false);
   const isMicActiveRef = useRef(false);
   const recognitionRef = useRef<any>(null);
   const silenceTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const isAgentSpeakingRef = useRef(isAgentSpeaking);
+
+  useEffect(() => {
+    isAgentSpeakingRef.current = isAgentSpeaking;
+  }, [isAgentSpeaking]);
 
   // Keep refs up to date to prevent stale closures in recognition event listeners
   useEffect(() => {
@@ -43,6 +51,29 @@ export const useSpeechRecognition = ({
     onEndRef.current = onEnd;
     addLogRef.current = addLog;
   }, [onStart, onResult, onSilence, onError, onEnd, addLog]);
+
+  // Effect to pause/resume speech recognition when agent starts/stops speaking
+  useEffect(() => {
+    if (!recognitionRef.current) return;
+
+    if (isMicActive) {
+      if (isAgentSpeaking) {
+        console.log("⏸️ Pausing recognition (Agent is speaking)");
+        try {
+          recognitionRef.current.stop();
+        } catch (err) {
+          console.warn("Failed to stop recognition:", err);
+        }
+      } else {
+        console.log("▶️ Resuming recognition (Agent stopped speaking)");
+        try {
+          recognitionRef.current.start();
+        } catch (err) {
+          console.warn("Failed to start recognition:", err);
+        }
+      }
+    }
+  }, [isMicActive, isAgentSpeaking]);
 
   useEffect(() => {
     if (typeof window === "undefined") return;
@@ -67,7 +98,12 @@ export const useSpeechRecognition = ({
     };
 
     rec.onresult = (event: any) => {
-      // Interrupt any ongoing TTS immediately
+      if (isAgentSpeakingRef.current) {
+        console.log("Ignoring recognition result because agent is speaking");
+        return;
+      }
+
+      // Interrupt any ongoing TTS immediately if user speaks (fallback barge-in)
       if (window.speechSynthesis?.speaking) {
         window.speechSynthesis.cancel();
       }
@@ -111,8 +147,8 @@ export const useSpeechRecognition = ({
     rec.onend = () => {
       console.log("Recognition ended");
       onEndRef.current?.();
-      // Auto-restart only if mic is supposed to be on
-      if (isMicActiveRef.current) {
+      // Auto-restart only if mic is supposed to be on and agent is not speaking
+      if (isMicActiveRef.current && !isAgentSpeakingRef.current) {
         try {
           rec.start();
         } catch {
@@ -149,11 +185,17 @@ export const useSpeechRecognition = ({
 
     setIsMicActive(true);
     isMicActiveRef.current = true;
-    try {
-      recognitionRef.current.start();
-      addLogRef.current?.("🎙️ Microphone active");
-    } catch (err) {
-      console.error("Failed to start recognition:", err);
+
+    // Only start if agent is not speaking
+    if (!isAgentSpeakingRef.current) {
+      try {
+        recognitionRef.current.start();
+        addLogRef.current?.("🎙️ Microphone active");
+      } catch (err) {
+        console.error("Failed to start recognition:", err);
+      }
+    } else {
+      addLogRef.current?.("🎙️ Microphone active (paused for speaking)");
     }
   }, []);
 
