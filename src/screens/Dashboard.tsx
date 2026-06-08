@@ -10,11 +10,8 @@ import {
 import { useVoiceAgent } from "@/hooks/useVoiceAgent";
 import { getUserInfo, logoutUser } from "@/lib/api";
 import {
-  Calendar,
   LogOut,
-  Mic,
   Settings,
-  Terminal,
 } from "lucide-react";
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
@@ -30,7 +27,6 @@ const Dashboard = ({ onLogout }: DashboardProps) => {
   const [showSettings, setShowSettings] = useState(false);
   const [showLogoutConfirm, setShowLogoutConfirm] = useState(false);
   const [voices, setVoices] = useState<SpeechSynthesisVoice[]>([]);
-  const [mobileTab, setMobileTab] = useState<"orb" | "chat" | "agenda">("orb");
 
   const user = getUserInfo();
 
@@ -46,6 +42,7 @@ const Dashboard = ({ onLogout }: DashboardProps) => {
     setSelectedVoice,
     toggleListening,
     resetSession,
+    sendTranscript,
   } = useVoiceAgent();
 
   // Load browser voices for TTS
@@ -119,14 +116,15 @@ const Dashboard = ({ onLogout }: DashboardProps) => {
       </header>
 
       {/* Main Panels Layout Container */}
-      <div className="flex-1 flex flex-col md:flex-row gap-4 overflow-hidden min-h-0">
+      <div className="flex-1 flex flex-col md:flex-row gap-4 overflow-y-auto md:overflow-hidden min-h-0 pr-1 custom-scrollbar">
         {/* LEFT PANEL: Chat History */}
         <ConversationHUD
           chatHistory={chatHistory}
           interimText={interimText}
           isWsConnected={isWsConnected}
           resetSession={resetSession}
-          mobileTab={mobileTab}
+          agentState={agentState}
+          sendTranscript={sendTranscript}
         />
 
         {/* CENTER STAGE: Voice Orb */}
@@ -135,56 +133,12 @@ const Dashboard = ({ onLogout }: DashboardProps) => {
           isMicActive={isMicActive}
           toggleListening={toggleListening}
           logs={logs}
-          mobileTab={mobileTab}
         />
 
         {/* RIGHT PANEL: Task Agenda */}
         <AgendaDashboard
           tasks={tasks}
-          mobileTab={mobileTab}
         />
-      </div>
-
-      {/* Mobile Bottom Tab Bar */}
-      <div className="md:hidden flex items-center justify-around border-t border-slate-900 bg-slate-950/90 backdrop-blur-md p-2 w-full shrink-0">
-        <button
-          onClick={() => setMobileTab("chat")}
-          className={`flex flex-col items-center gap-1 py-1 px-4 rounded-xl transition-all duration-200 cursor-pointer ${
-            mobileTab === "chat"
-              ? "text-indigo-400 bg-indigo-500/10 font-semibold"
-              : "text-slate-500 hover:text-slate-300"
-          }`}
-        >
-          <Terminal className="w-5 h-5" />
-          <span className="text-[10px]">Chat Log</span>
-        </button>
-
-        <button
-          onClick={() => setMobileTab("orb")}
-          className={`flex flex-col items-center gap-1 py-1 px-5 rounded-xl transition-all duration-200 relative cursor-pointer ${
-            mobileTab === "orb"
-              ? "text-pink-400 bg-pink-500/10 font-semibold"
-              : "text-slate-500 hover:text-slate-300"
-          }`}
-        >
-          {isMicActive && (
-            <span className="absolute top-1 right-5 w-2 h-2 rounded-full bg-pink-500 animate-ping" />
-          )}
-          <Mic className={`w-5 h-5 ${isMicActive && mobileTab !== "orb" ? "text-pink-500 animate-pulse" : ""}`} />
-          <span className="text-[10px]">Assistant</span>
-        </button>
-
-        <button
-          onClick={() => setMobileTab("agenda")}
-          className={`flex flex-col items-center gap-1 py-1 px-4 rounded-xl transition-all duration-200 cursor-pointer ${
-            mobileTab === "agenda"
-              ? "text-indigo-400 bg-indigo-500/10 font-semibold"
-              : "text-slate-500 hover:text-slate-300"
-          }`}
-        >
-          <Calendar className="w-5 h-5" />
-          <span className="text-[10px]">Agenda</span>
-        </button>
       </div>
 
       {/* SETTINGS DIALOG */}

@@ -1,215 +1,202 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useRef, useState } from "react";
 import { toast } from "sonner";
 
-interface UseSpeechRecognitionProps {
+interface UseAudioRecorderProps {
   onStart?: () => void;
-  onResult?: (interim: string, final: string) => void;
-  onSilence?: () => void;
+  onStop?: (blob: Blob) => void;
   onError?: (error: string) => void;
-  onEnd?: () => void;
   addLog?: (msg: string) => void;
-  isAgentSpeaking?: boolean;
+  onInterimText?: (text: string) => void;
 }
 
 export const useSpeechRecognition = ({
   onStart,
-  onResult,
-  onSilence,
+  onStop,
   onError,
-  onEnd,
   addLog,
-  isAgentSpeaking = false,
-}: UseSpeechRecognitionProps = {}) => {
+  onInterimText,
+}: UseAudioRecorderProps = {}) => {
   const [isMicActive, setIsMicActive] = useState(false);
-  const isMicActiveRef = useRef(false);
+  const mediaRecorderRef = useRef<MediaRecorder | null>(null);
+  const audioChunksRef = useRef<Blob[]>([]);
+  const streamRef = useRef<MediaStream | null>(null);
+
+  // Web Audio API refs for silence detection
+  const audioContextRef = useRef<AudioContext | null>(null);
+  const analyserRef = useRef<AnalyserNode | null>(null);
+  const analyserIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const recognitionRef = useRef<any>(null);
-  const silenceTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  const isAgentSpeakingRef = useRef(isAgentSpeaking);
-
-  useEffect(() => {
-    isAgentSpeakingRef.current = isAgentSpeaking;
-  }, [isAgentSpeaking]);
-
-  // Keep refs up to date to prevent stale closures in recognition event listeners
-  useEffect(() => {
-    isMicActiveRef.current = isMicActive;
-  }, [isMicActive]);
-
-  const onStartRef = useRef(onStart);
-  const onResultRef = useRef(onResult);
-  const onSilenceRef = useRef(onSilence);
-  const onErrorRef = useRef(onError);
-  const onEndRef = useRef(onEnd);
-  const addLogRef = useRef(addLog);
-
-  useEffect(() => {
-    onStartRef.current = onStart;
-    onResultRef.current = onResult;
-    onSilenceRef.current = onSilence;
-    onErrorRef.current = onError;
-    onEndRef.current = onEnd;
-    addLogRef.current = addLog;
-  }, [onStart, onResult, onSilence, onError, onEnd, addLog]);
-
-  // Effect to pause/resume speech recognition when agent starts/stops speaking
-  useEffect(() => {
-    if (!recognitionRef.current) return;
-
-    if (isMicActive) {
-      if (isAgentSpeaking) {
-        console.log("⏸️ Pausing recognition (Agent is speaking)");
-        try {
-          recognitionRef.current.stop();
-        } catch (err) {
-          console.warn("Failed to stop recognition:", err);
-        }
-      } else {
-        console.log("▶️ Resuming recognition (Agent stopped speaking)");
-        try {
-          recognitionRef.current.start();
-        } catch (err) {
-          console.warn("Failed to start recognition:", err);
-        }
-      }
-    }
-  }, [isMicActive, isAgentSpeaking]);
-
-  useEffect(() => {
-    if (typeof window === "undefined") return;
-
-    const SpeechRecognition =
-      (window as any).SpeechRecognition ||
-      (window as any).webkitSpeechRecognition;
-
-    if (!SpeechRecognition) {
-      toast.error("Web Speech API not supported. Please use Chrome or Edge.");
-      return;
+  // Stop recording and cleanup audio resources
+  const stopListening = useCallback(() => {
+    // Clear silence monitoring interval
+    if (analyserIntervalRef.current) {
+      clearInterval(analyserIntervalRef.current);
+      analyserIntervalRef.current = null;
     }
 
-    const rec = new SpeechRecognition();
-    rec.continuous = true;
-    rec.interimResults = true;
-    rec.lang = "en-US";
-
-    rec.onstart = () => {
-      console.log("🎙️ Recognition started");
-      onStartRef.current?.();
-    };
-
-    rec.onresult = (event: any) => {
-      if (isAgentSpeakingRef.current) {
-        console.log("Ignoring recognition result because agent is speaking");
-        return;
+    // Close AudioContext
+    if (audioContextRef.current) {
+      if (audioContextRef.current.state !== "closed") {
+        audioContextRef.current.close().catch(console.error);
       }
+      audioContextRef.current = null;
+    }
+    analyserRef.current = null;
 
-      // Interrupt any ongoing TTS immediately if user speaks (fallback barge-in)
-      if (window.speechSynthesis?.speaking) {
-        window.speechSynthesis.cancel();
-      }
-
-      let interim = "";
-      let final = "";
-
-      for (let i = event.resultIndex; i < event.results.length; i++) {
-        const result = event.results[i];
-        if (result.isFinal) {
-          final += result[0].transcript;
-        } else {
-          interim += result[0].transcript;
-        }
-      }
-
-      onResultRef.current?.(interim, final);
-
-      // Auto-revert to idle after 3.5 s of silence
-      if (silenceTimerRef.current) clearTimeout(silenceTimerRef.current);
-      silenceTimerRef.current = setTimeout(() => {
-        onSilenceRef.current?.();
-      }, 3500);
-    };
-
-    rec.onerror = (event: any) => {
-      console.error("Recognition error:", event.error);
-      if (event.error === "not-allowed") {
-        toast.error("Microphone access denied. Please allow it in browser settings.");
-        setIsMicActive(false);
-        isMicActiveRef.current = false;
-      } else if (event.error === "no-speech") {
-        // Silently ignore — happens when background noise triggers the API
-        console.warn("No speech detected");
-      } else {
-        console.warn("Recognition error:", event.error, "— will auto-restart");
-      }
-      onErrorRef.current?.(event.error);
-    };
-
-    rec.onend = () => {
-      console.log("Recognition ended");
-      onEndRef.current?.();
-      // Auto-restart only if mic is supposed to be on and agent is not speaking
-      if (isMicActiveRef.current && !isAgentSpeakingRef.current) {
-        try {
-          rec.start();
-        } catch {
-          /* ignore race */
-        }
-      }
-    };
-
-    recognitionRef.current = rec;
-
-    return () => {
-      if (silenceTimerRef.current) clearTimeout(silenceTimerRef.current);
-      if (recognitionRef.current) {
-        recognitionRef.current.onstart = null;
+    // Stop browser SpeechRecognition
+    if (recognitionRef.current) {
+      try {
         recognitionRef.current.onresult = null;
         recognitionRef.current.onerror = null;
         recognitionRef.current.onend = null;
-        try {
-          recognitionRef.current.stop();
-        } catch {
-          /* ignore */
-        }
-      }
-    };
-  }, []);
-
-  const startListening = useCallback(() => {
-    if (!recognitionRef.current) {
-      toast.error("Speech recognition unavailable in this browser.");
-      return;
+        recognitionRef.current.stop();
+      } catch { }
+      recognitionRef.current = null;
     }
-    // Cancel any ongoing TTS so user can immediately speak
-    window.speechSynthesis?.cancel();
 
-    setIsMicActive(true);
-    isMicActiveRef.current = true;
-
-    // Only start if agent is not speaking
-    if (!isAgentSpeakingRef.current) {
-      try {
-        recognitionRef.current.start();
-        addLogRef.current?.("🎙️ Microphone active");
-      } catch (err) {
-        console.error("Failed to start recognition:", err);
-      }
-    } else {
-      addLogRef.current?.("🎙️ Microphone active (paused for speaking)");
+    // Stop MediaRecorder
+    if (mediaRecorderRef.current && mediaRecorderRef.current.state !== "inactive") {
+      mediaRecorderRef.current.stop();
+      console.log("🎙️ Stopping voice recording (microphone deactivated)");
     }
   }, []);
 
-  const stopListening = useCallback(() => {
-    setIsMicActive(false);
-    isMicActiveRef.current = false;
+  const startListening = useCallback(async () => {
     try {
-      recognitionRef.current?.stop();
-    } catch {
-      /* ignore */
+      if (typeof window === "undefined" || !navigator.mediaDevices) {
+        throw new Error("Media devices not supported in this browser.");
+      }
+
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      streamRef.current = stream;
+
+      // Determine supported mime type
+      let options = { mimeType: "audio/webm" };
+      if (!MediaRecorder.isTypeSupported(options.mimeType)) {
+        options = { mimeType: "audio/ogg" };
+      }
+      if (!MediaRecorder.isTypeSupported(options.mimeType)) {
+        options = { mimeType: "" }; // default browser type
+      }
+
+      const mediaRecorder = new MediaRecorder(stream, options);
+      mediaRecorderRef.current = mediaRecorder;
+      audioChunksRef.current = [];
+
+      mediaRecorder.ondataavailable = (event) => {
+        if (event.data && event.data.size > 0) {
+          audioChunksRef.current.push(event.data);
+        }
+      };
+
+      mediaRecorder.onstart = () => {
+        console.log("🎙️ Voice is recording: MediaRecorder started");
+        setIsMicActive(true);
+        addLog?.("🎙️ Microphone active — recording...");
+        onStart?.();
+
+        // Try to initialize browser speech recognition for real-time HUD updates
+        try {
+          const SpeechRecognitionClass = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
+          if (SpeechRecognitionClass) {
+            const rec = new SpeechRecognitionClass();
+            rec.continuous = true;
+            rec.interimResults = true;
+            rec.lang = "en-US";
+
+            rec.onresult = (event: any) => {
+              let interim = "";
+              for (let i = event.resultIndex; i < event.results.length; ++i) {
+                interim += event.results[i][0].transcript;
+              }
+              onInterimText?.(interim);
+            };
+
+            rec.onerror = (e: any) => {
+              // Quietly log real-time errors without affecting standard audio recording
+              console.log("🎙️ Real-time speech preview info:", e.error);
+            };
+
+            rec.start();
+            recognitionRef.current = rec;
+          }
+        } catch (recErr) {
+          console.warn("Real-time speech recognition preview not available:", recErr);
+        }
+
+        // Initialize Web Audio API for volume-based silence detection
+        try {
+          const AudioContextClass = window.AudioContext || (window as any).webkitAudioContext;
+          const audioContext = new AudioContextClass();
+          audioContextRef.current = audioContext;
+
+          const source = audioContext.createMediaStreamSource(stream);
+          const analyser = audioContext.createAnalyser();
+          analyser.fftSize = 512;
+          analyserRef.current = analyser;
+          source.connect(analyser);
+
+          const bufferLength = analyser.frequencyBinCount;
+          const dataArray = new Uint8Array(bufferLength);
+
+          let silenceDurationMs = 0;
+          const SILENCE_THRESHOLD = 0.015; // Volume levels below this are considered silence
+          const AUTO_STOP_SILENCE_MS = 2000; // Auto stop after 2 seconds of silence
+
+          analyserIntervalRef.current = setInterval(() => {
+            if (!analyserRef.current) return;
+
+            analyserRef.current.getByteTimeDomainData(dataArray);
+
+            // Calculate Root Mean Square (RMS) volume level
+            let sumSquares = 0;
+            for (let i = 0; i < bufferLength; i++) {
+              const normalizedValue = (dataArray[i] - 128) / 128;
+              sumSquares += normalizedValue * normalizedValue;
+            }
+            const rmsVolume = Math.sqrt(sumSquares / bufferLength);
+
+
+            if (rmsVolume < SILENCE_THRESHOLD) {
+              silenceDurationMs += 100;
+              if (silenceDurationMs >= AUTO_STOP_SILENCE_MS) {
+                stopListening();
+              }
+            } else {
+              silenceDurationMs = 0; // User is speaking, reset silence timer
+            }
+          }, 100);
+        } catch (audioErr) {
+          console.warn("Failed to initialize silence auto-detection:", audioErr);
+        }
+      };
+
+      mediaRecorder.onstop = () => {
+        setIsMicActive(false);
+        addLog?.("🛑 Microphone off — processing audio...");
+
+        const audioBlob = new Blob(audioChunksRef.current, {
+          type: mediaRecorder.mimeType || "audio/webm",
+        });
+
+        onStop?.(audioBlob);
+
+        // Stop all audio tracks to release the mic
+        if (streamRef.current) {
+          streamRef.current.getTracks().forEach((track) => track.stop());
+          streamRef.current = null;
+        }
+      };
+
+      mediaRecorder.start(250); // collect data every 250ms chunks
+    } catch (err: any) {
+      console.error("Failed to start voice recording:", err);
+      toast.error("Microphone access failed: " + err.message);
+      onError?.(err.message);
+      setIsMicActive(false);
     }
-    window.speechSynthesis?.cancel();
-    addLogRef.current?.("🛑 Microphone off");
-  }, []);
+  }, [onStart, onStop, onError, addLog, stopListening]);
 
   return {
     isMicActive,

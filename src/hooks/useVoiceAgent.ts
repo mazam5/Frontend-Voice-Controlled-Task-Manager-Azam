@@ -6,7 +6,6 @@ import { useSpeechSynthesis } from "./useSpeechSynthesis";
 import { useSpeechRecognition } from "./useSpeechRecognition";
 import { useVoiceAgentWebSocket } from "./useVoiceAgentWebSocket";
 
-// ─── Types ────────────────────────────────────────────────────────────────────
 export type AgentState = "idle" | "listening" | "thinking" | "speaking";
 
 export interface ChatMessage {
@@ -16,7 +15,6 @@ export interface ChatMessage {
   timestamp: Date;
 }
 
-// ─── Hook ─────────────────────────────────────────────────────────────────────
 export const useVoiceAgent = (onTasksUpdated?: (tasks: Task[]) => void) => {
   const [agentState, setAgentState] = useState<AgentState>("idle");
   const [tasks, setTasks] = useState<Task[]>([]);
@@ -24,10 +22,10 @@ export const useVoiceAgent = (onTasksUpdated?: (tasks: Task[]) => void) => {
   const [interimText, setInterimText] = useState("");
   const [logs, setLogs] = useState<string[]>([]);
 
-  // ── Stable refs to avoid stale closures in callback closures ────────────────
   const agentStateRef = useRef<AgentState>("idle");
   const onTasksUpdatedRef = useRef(onTasksUpdated);
   const isMicActiveRef = useRef(false);
+  const isAutoListeningRef = useRef(false);
 
   useEffect(() => {
     agentStateRef.current = agentState;
@@ -37,7 +35,6 @@ export const useVoiceAgent = (onTasksUpdated?: (tasks: Task[]) => void) => {
     onTasksUpdatedRef.current = onTasksUpdated;
   }, [onTasksUpdated]);
 
-  // ── Logging ─────────────────────────────────────────────────────────────────
   const addLog = useCallback((msg: string) => {
     setLogs((prev) => [
       `[${new Date().toLocaleTimeString()}] ${msg}`,
@@ -45,31 +42,43 @@ export const useVoiceAgent = (onTasksUpdated?: (tasks: Task[]) => void) => {
     ]);
   }, []);
 
-  // ── TTS Hook (Text-to-Speech) ───────────────────────────────────────────────
+  // TTS Hook (Text-to-Speech)
   const {
     selectedVoice,
     setSelectedVoice,
     speakText,
+    cancelSpeech,
   } = useSpeechSynthesis({
     onStart: () => {
       setAgentState("speaking");
     },
     onEnd: () => {
-      if (agentStateRef.current === "speaking") {
-        setAgentState("idle");
+      const wasSpeaking = agentStateRef.current === "speaking";
+      setAgentState("idle");
+      if (wasSpeaking && isAutoListeningRef.current) {
+        setTimeout(() => {
+          if (agentStateRef.current === "idle") {
+            startListening();
+          }
+        }, 400);
       }
     },
     onError: () => {
-      if (agentStateRef.current === "speaking") {
-        setAgentState("idle");
+      const wasSpeaking = agentStateRef.current === "speaking";
+      setAgentState("idle");
+      if (wasSpeaking && isAutoListeningRef.current) {
+        setTimeout(() => {
+          if (agentStateRef.current === "idle") {
+            startListening();
+          }
+        }, 400);
       }
     },
   });
 
-  // ── WebSocket Hook ─────────────────────────────────────────────────────────
+  // WebSocket Hook (keeps session connection alive)
   const {
     isWsConnected,
-    sendTranscriptMessage,
     sendResetMessage,
   } = useVoiceAgentWebSocket({
     addLog,
@@ -78,7 +87,6 @@ export const useVoiceAgent = (onTasksUpdated?: (tasks: Task[]) => void) => {
     },
     onResponse: (text: string, updatedTasks: Task[], logMsg?: string) => {
       setAgentState("speaking");
-
       setChatHistory((prev) => [
         ...prev,
         {
@@ -88,12 +96,10 @@ export const useVoiceAgent = (onTasksUpdated?: (tasks: Task[]) => void) => {
           timestamp: new Date(),
         },
       ]);
-
       if (updatedTasks?.length !== undefined) {
         setTasks(updatedTasks);
         onTasksUpdatedRef.current?.(updatedTasks);
       }
-
       if (logMsg) addLog(logMsg);
       speakText(text);
     },
@@ -107,9 +113,9 @@ export const useVoiceAgent = (onTasksUpdated?: (tasks: Task[]) => void) => {
     },
   });
 
-  // ── Send final transcript text ───────────────────────────────────────────────
+  // Manual transcription helper (available as fallback)
   const sendTranscript = useCallback(
-    (text: string) => {
+    async (text: string) => {
       const trimmed = text.trim();
       if (!trimmed) return;
 
@@ -123,55 +129,80 @@ export const useVoiceAgent = (onTasksUpdated?: (tasks: Task[]) => void) => {
         },
       ]);
       addLog(`You: "${trimmed}"`);
-
-      const sent = sendTranscriptMessage(trimmed);
-      if (sent) {
-        setAgentState("thinking");
-      } else {
-        toast.error("Voice engine disconnected. Please wait for reconnection.");
-        addLog("WS offline — transcript dropped");
-      }
+      setAgentState("thinking");
     },
-    [addLog, sendTranscriptMessage]
+    [addLog]
   );
 
-  // Stable ref for sendTranscript used in Speech Recognition callbacks
-  const sendTranscriptRef = useRef(sendTranscript);
-  useEffect(() => {
-    sendTranscriptRef.current = sendTranscript;
-  }, [sendTranscript]);
-
-  // ── Speech Recognition Hook (STT) ──────────────────────────────────────────
+  // Audio Speech Recording Hook (transcribes locally captured webm Blobs via backend REST upload)
   const {
     isMicActive,
     startListening: startRec,
     stopListening: stopRec,
   } = useSpeechRecognition({
-    isAgentSpeaking: agentState === "speaking",
     onStart: () => {
       setAgentState("listening");
+      setInterimText("");
     },
-    onResult: (interim: string, final: string) => {
-      if (agentStateRef.current === "speaking" || window.speechSynthesis?.speaking) {
-        setAgentState("listening");
-      }
+    onInterimText: (text) => {
+      setInterimText(text);
+    },
+    onStop: async (audioBlob: Blob) => {
+      setAgentState("thinking");
+      setInterimText("");
+      addLog("Uploading audio file for transcription & processing...");
 
-      if (interim) setInterimText(interim);
+      try {
+        const result = await api.uploadAudio(audioBlob);
 
-      if (final.trim()) {
-        setInterimText("");
-        sendTranscriptRef.current(final.trim());
+        // Add user transcript to chat log
+        if (result.transcript) {
+          setChatHistory((prev) => [
+            ...prev,
+            {
+              id: Math.random().toString(36).slice(2),
+              sender: "user",
+              text: result.transcript,
+              timestamp: new Date(),
+            },
+          ]);
+          addLog(`You: "${result.transcript}"`);
+        }
+
+        // Add agent response to chat and speak
+        if (result.textResponse) {
+          setAgentState("speaking");
+          setChatHistory((prev) => [
+            ...prev,
+            {
+              id: Math.random().toString(36).slice(2),
+              sender: "agent",
+              text: result.textResponse,
+              timestamp: new Date(),
+            },
+          ]);
+          if (result.log) addLog(result.log);
+          speakText(result.textResponse);
+        } else {
+          setAgentState("idle");
+        }
+
+        // Synchronize tasks list
+        if (result.tasks) {
+          setTasks(result.tasks);
+          onTasksUpdatedRef.current?.(result.tasks);
+        }
+      } catch (err: any) {
+        console.error("Voice processing error:", err);
+        addLog(`Error: ${err.message}`);
+        setAgentState("idle");
+        toast.error("Voice processing failed: " + err.message);
       }
     },
-    onSilence: () => {
-      if (agentStateRef.current === "listening" && !window.speechSynthesis?.speaking) {
-        setAgentState("idle");
-      }
-    },
-    onEnd: () => {
-      if (!isMicActiveRef.current) {
-        setAgentState("idle");
-      }
+    onError: (error) => {
+      addLog(`Mic error: ${error}`);
+      setAgentState("idle");
+      setInterimText("");
     },
     addLog,
   });
@@ -180,7 +211,7 @@ export const useVoiceAgent = (onTasksUpdated?: (tasks: Task[]) => void) => {
     isMicActiveRef.current = isMicActive;
   }, [isMicActive]);
 
-  // ── Initial task load ────────────────────────────────────────────────────────
+  // Initial tasks refresh
   const refreshTasks = useCallback(async () => {
     try {
       const data = await api.getTasks();
@@ -195,34 +226,37 @@ export const useVoiceAgent = (onTasksUpdated?: (tasks: Task[]) => void) => {
     refreshTasks();
   }, [refreshTasks]);
 
-  // ── Mic toggle / controls ───────────────────────────────────────────────────
   const startListening = useCallback(() => {
+    isAutoListeningRef.current = true;
     startRec();
   }, [startRec]);
 
   const stopListening = useCallback(() => {
+    isAutoListeningRef.current = false;
     stopRec();
     setAgentState("idle");
     setInterimText("");
   }, [stopRec]);
 
   const toggleListening = useCallback(() => {
-    if (isMicActiveRef.current) stopListening();
-    else startListening();
-  }, [startListening, stopListening]);
+    if (agentStateRef.current === "speaking") {
+      isAutoListeningRef.current = false;
+      cancelSpeech();
+      setAgentState("idle");
+    } else if (isMicActiveRef.current || agentStateRef.current === "listening") {
+      stopListening();
+    } else {
+      startListening();
+    }
+  }, [startListening, stopListening, cancelSpeech]);
 
-  // ── Session reset ────────────────────────────────────────────────────────────
   const resetSession = useCallback(() => {
     setChatHistory([]);
     setInterimText("");
     setLogs([]);
     addLog("Session cleared");
 
-    const sent = sendResetMessage();
-    if (!sent) {
-      api.resetSession().catch(console.error);
-    }
-
+    sendResetMessage();
     toast.success("Conversation history cleared");
   }, [addLog, sendResetMessage]);
 
@@ -241,5 +275,6 @@ export const useVoiceAgent = (onTasksUpdated?: (tasks: Task[]) => void) => {
     stopListening,
     resetSession,
     refreshTasks,
+    sendTranscript,
   };
 };

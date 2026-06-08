@@ -50,8 +50,24 @@ export const useVoiceAgentWebSocket = ({
 
     // Tear down existing socket cleanly
     if (wsRef.current) {
-      wsRef.current.onclose = null;
-      wsRef.current.close();
+      const socket = wsRef.current;
+      socket.onclose = null;
+      socket.onerror = null;
+      socket.onopen = null;
+      socket.onmessage = null;
+
+      if (socket.readyState === WebSocket.CONNECTING) {
+        // Defer closing until the connection is open to suppress Chrome warnings
+        socket.onopen = () => {
+          try {
+            socket.close();
+          } catch {}
+        };
+      } else if (socket.readyState === WebSocket.OPEN) {
+        try {
+          socket.close();
+        } catch {}
+      }
       wsRef.current = null;
     }
 
@@ -99,7 +115,9 @@ export const useVoiceAgentWebSocket = ({
       }
     };
 
-    ws.onerror = () => console.warn("WS error — will auto-reconnect");
+    ws.onerror = () => {
+      // Quietly handle connection errors without spamming the console
+    };
 
     ws.onclose = (event) => {
       setIsWsConnected(false);
@@ -109,7 +127,6 @@ export const useVoiceAgentWebSocket = ({
 
       const delay = Math.min(1000 * 2 ** reconnectAttemptsRef.current, 15_000);
       reconnectAttemptsRef.current++;
-      addLogRef.current(`Reconnecting in ${delay / 1000}s…`);
       if (reconnectTimerRef.current) clearTimeout(reconnectTimerRef.current);
       reconnectTimerRef.current = setTimeout(() => {
         if (getToken()) connectWebSocket();
@@ -123,8 +140,24 @@ export const useVoiceAgentWebSocket = ({
       reconnectTimerRef.current = null;
     }
     if (wsRef.current) {
-      wsRef.current.onclose = null;
-      wsRef.current.close(1000, "logout");
+      const socket = wsRef.current;
+      socket.onclose = null;
+      socket.onerror = null;
+      socket.onopen = null;
+      socket.onmessage = null;
+
+      if (socket.readyState === WebSocket.CONNECTING) {
+        // Defer closing until the connection is open to suppress Chrome warnings
+        socket.onopen = () => {
+          try {
+            socket.close();
+          } catch {}
+        };
+      } else if (socket.readyState !== WebSocket.CLOSED) {
+        try {
+          socket.close(1000, "logout");
+        } catch {}
+      }
       wsRef.current = null;
     }
     setIsWsConnected(false);

@@ -6,7 +6,6 @@ interface VoiceOrbPanelProps {
   isMicActive: boolean;
   toggleListening: () => void;
   logs: string[];
-  mobileTab: "orb" | "chat" | "agenda";
 }
 
 export const VoiceOrbPanel = ({
@@ -14,13 +13,10 @@ export const VoiceOrbPanel = ({
   isMicActive,
   toggleListening,
   logs,
-  mobileTab,
 }: VoiceOrbPanelProps) => {
   return (
     <div
-      className={`flex-[0.9] flex flex-col glass-panel rounded-2xl p-6 justify-center items-center relative overflow-hidden h-full ${
-        mobileTab === "orb" ? "flex" : "hidden"
-      } md:flex`}
+      className="flex-[0.9] flex flex-col glass-panel rounded-2xl p-6 justify-center items-center relative overflow-hidden h-full min-h-[380px] md:min-h-0"
     >
       <div className="flex flex-col items-center justify-center my-auto z-10 gap-6">
         <button

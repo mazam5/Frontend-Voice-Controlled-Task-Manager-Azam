@@ -3,7 +3,7 @@ import { zodResolver } from "@hookform/resolvers/zod"
 import { Controller, useForm } from "react-hook-form"
 import { toast } from "sonner"
 import * as z from "zod"
-import { Eye, EyeOff } from "lucide-react"
+import { Eye, EyeOff, Loader2 } from "lucide-react"
 
 import { Button } from "@/components/ui/button"
 import {
@@ -104,6 +104,7 @@ const Login = ({ onLoginSuccess }: LoginProps) => {
                     />
                     <button
                       type="button"
+                      tabIndex={-1}
                       onClick={() => setShowPassword(!showPassword)}
                       className="absolute inset-y-0 right-0 pr-3 flex items-center text-slate-400 hover:text-slate-200 cursor-pointer"
                       title={showPassword ? "Hide password" : "Show password"}
@@ -131,7 +132,14 @@ const Login = ({ onLoginSuccess }: LoginProps) => {
           className="w-full"
           disabled={isLoading}
         >
-          {isLoading ? "Logging in..." : "Login"}
+          {isLoading ? (
+            <>
+              <Loader2 className="mr-2 h-4 w-4 animate-spin shrink-0" />
+              Logging in...
+            </>
+          ) : (
+            "Login"
+          )}
         </Button>
       </CardFooter>
     </Card>

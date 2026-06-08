@@ -1,14 +1,15 @@
 import { useEffect, useRef } from "react";
 import { Button } from "@/components/ui/button";
 import { RefreshCw, Volume2 } from "lucide-react";
-import type { ChatMessage } from "@/hooks/useVoiceAgent";
+import type { ChatMessage, AgentState } from "@/hooks/useVoiceAgent";
 
 interface ConversationHUDProps {
   chatHistory: ChatMessage[];
   interimText: string;
   isWsConnected: boolean;
   resetSession: () => void;
-  mobileTab: "orb" | "chat" | "agenda";
+  agentState: AgentState;
+  sendTranscript: (text: string) => void;
 }
 
 export const ConversationHUD = ({
@@ -16,24 +17,20 @@ export const ConversationHUD = ({
   interimText,
   isWsConnected,
   resetSession,
-  mobileTab,
+  agentState,
 }: ConversationHUDProps) => {
   const chatEndRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     chatEndRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [chatHistory, interimText]);
+  }, [chatHistory, interimText, agentState]);
 
   return (
-    <div
-      className={`flex-1 flex flex-col glass-panel rounded-2xl p-4 overflow-hidden h-full ${
-        mobileTab === "chat" ? "flex" : "hidden"
-      } md:flex`}
-    >
+    <div className="flex-1 flex flex-col glass-panel rounded-2xl p-4 overflow-hidden h-full min-h-[380px] md:min-h-0">
       <div className="flex items-center justify-between border-b border-slate-800 pb-3 mb-3 shrink-0">
         <div>
           <h2 className="font-bold text-base text-slate-200">Conversation HUD</h2>
-          <p className="text-[10px] text-slate-400">Live Voice Transcript</p>
+          <p className="text-[10px] text-slate-400">Live Voice command console</p>
         </div>
         <div>
           <Button
@@ -54,7 +51,7 @@ export const ConversationHUD = ({
             <Volume2 className="w-8 h-8 mb-2 opacity-30 animate-bounce" />
             <p className="text-sm">No messages yet.</p>
             <p className="text-xs max-w-xs mt-1">
-              Click the orb to speak, or type a command below — e.g.{" "}
+              Click the orb to speak — e.g.{" "}
               <em>"Create a task for tomorrow at 8 AM"</em>
             </p>
           </div>
@@ -98,10 +95,22 @@ export const ConversationHUD = ({
             </span>
           </div>
         )}
+
+        {agentState === "listening" && !interimText && (
+          <div className="flex flex-col max-w-[85%] self-end items-end animate-pulse">
+            <div className="px-4 py-2 bg-indigo-600/10 text-indigo-300 border border-indigo-500/10 rounded-2xl rounded-tr-none text-xs">
+              Listening...
+            </div>
+            <span className="text-[10px] text-indigo-400/55 mt-1 px-1">
+              Mic is active
+            </span>
+          </div>
+        )}
+
         <div ref={chatEndRef} />
       </div>
 
-      <div className="border-t border-slate-900 pt-3 mt-3 flex items-center justify-between text-[10px] text-slate-500 shrink-0">
+      <div className="border-t border-slate-900 pt-2.5 mt-2 flex items-center justify-between text-[10px] text-slate-500 shrink-0">
         <div className="flex items-center gap-2">
           <span
             className={`w-1.5 h-1.5 rounded-full ${
@@ -111,7 +120,7 @@ export const ConversationHUD = ({
             }`}
           />
           <span>
-            {isWsConnected ? "Connected" : "Offline (HTTP Fallback)"}
+            {isWsConnected ? "Connected" : "Offline"}
           </span>
         </div>
         <span className="font-semibold text-slate-400">

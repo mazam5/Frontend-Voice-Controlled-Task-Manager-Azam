@@ -7,10 +7,11 @@ const getWsUrl = () => {
   const isHttps = typeof window !== "undefined" && window.location.protocol === "https:";
 
   if (envUrl) {
-    if (isHttps && envUrl.startsWith("ws://")) {
-      return envUrl.replace("ws://", "wss://");
+    let url = envUrl;
+    if (isHttps && url.startsWith("ws://")) {
+      url = url.replace("ws://", "wss://");
     }
-    return envUrl;
+    return url.endsWith("/ws") ? url : `${url.replace(/\/$/, "")}/ws`;
   }
 
   // Auto-generate based on BACKEND_URL
@@ -156,6 +157,47 @@ export const api = {
 
 
   getTasks: (): Promise<Task[]> => authFetch("/api/tasks"),
+
+  updateTask: (taskId: number, updates: any): Promise<Task> =>
+    authFetch(`/api/tasks/${taskId}`, {
+      method: "PATCH",
+      body: JSON.stringify(updates),
+    }),
+
+  deleteTask: (taskId: number): Promise<any> =>
+    authFetch(`/api/tasks/${taskId}`, {
+      method: "DELETE",
+    }),
+
+  uploadAudio: async (audioBlob: Blob): Promise<any> => {
+    const token = getToken();
+    const formData = new FormData();
+    formData.append("audio", audioBlob, "recording.webm");
+
+    const headers: Record<string, string> = {};
+    if (token) {
+      headers["Authorization"] = `Bearer ${token}`;
+    }
+
+    const response = await fetch(`${BACKEND_URL}/api/voice/chat`, {
+      method: "POST",
+      headers,
+      body: formData,
+    });
+
+    if (response.status === 401) {
+      logoutUser();
+      window.location.reload();
+      throw new Error("Unauthorized");
+    }
+
+    if (!response.ok) {
+      const errorData = await response.json().catch(() => ({}));
+      throw new Error(errorData.message || `Request failed with status ${response.status}`);
+    }
+
+    return response.json();
+  },
 
   resetSession: () =>
     authFetch("/api/voice/reset", { method: "POST" }),

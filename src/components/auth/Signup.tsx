@@ -3,7 +3,7 @@ import { zodResolver } from "@hookform/resolvers/zod"
 import { Controller, useForm } from "react-hook-form"
 import { toast } from "sonner"
 import * as z from "zod"
-import { Eye, EyeOff, Check, Info } from "lucide-react"
+import { Eye, EyeOff, Check, Info, Loader2 } from "lucide-react"
 import { HoverCard, HoverCardContent, HoverCardTrigger } from "@/components/ui/hover-card"
 
 import { Button } from "@/components/ui/button"
@@ -172,7 +172,7 @@ const SignUp = ({ onRegisterSuccess }: SignUpProps) => {
                     id="emailId"
                     type="email"
                     aria-invalid={fieldState.invalid}
-                    placeholder="m@example.com"
+                    placeholder="email@example.com"
                     autoComplete="off"
                     disabled={isLoading}
                   />
@@ -209,6 +209,7 @@ const SignUp = ({ onRegisterSuccess }: SignUpProps) => {
                         <Button
                           variant="ghost"
                           type="button"
+                          tabIndex={-1}
                           onClick={() => setShowPassword(!showPassword)}
                           className="absolute inset-y-0 right-0 pr-3 flex items-center text-slate-400 hover:text-slate-200 cursor-pointer"
                           title={showPassword ? "Hide password" : "Show password"}
@@ -283,6 +284,7 @@ const SignUp = ({ onRegisterSuccess }: SignUpProps) => {
                     <Button
                       variant="ghost"
                       type="button"
+                      tabIndex={-1}
                       onClick={() => setShowPassword(!showPassword)}
                       className="absolute inset-y-0 right-0 pr-3 flex items-center text-slate-400 hover:text-slate-200 cursor-pointer"
                       title={showPassword ? "Hide password" : "Show password"}
@@ -310,7 +312,14 @@ const SignUp = ({ onRegisterSuccess }: SignUpProps) => {
           className="w-full"
           disabled={isLoading}
         >
-          {isLoading ? "Signing up..." : "Sign Up"}
+          {isLoading ? (
+            <>
+              <Loader2 className="mr-2 h-4 w-4 animate-spin shrink-0" />
+              Signing up...
+            </>
+          ) : (
+            "Sign Up"
+          )}
         </Button>
       </CardFooter>
     </Card>
